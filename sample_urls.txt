@@ -1,0 +1,2 @@
+https://example.com/products/page1
+https://example.com/products/page2
