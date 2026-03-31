@@ -2,9 +2,14 @@
 
 Simple Python scraper for product-listing pages.
 
-It reads URLs from a text file, scrapes repeated product cards, saves a CSV, and can generate price/rating charts.
+It works by:
 
-This only works well when the target site has a clear repeating product structure and you know the CSS selectors you want to use.
+1. loading one or more URLs
+2. finding repeated product containers with a CSS selector
+3. pulling title, price, and rating values from each container using more CSS selectors
+4. saving the result to CSV and optional charts
+
+That means this is not a generic "scrape any site automatically" tool. It works best on pages with a repeated product-card layout where you already know, or can inspect, the selectors you want.
 
 ## Install
 
@@ -36,6 +41,23 @@ python .\all_in_one_scraper.py `
   --price-selector ".product-price" `
   --rating-selector ".product-rating"
 ```
+
+## UI
+
+There is also a small desktop UI:
+
+```bash
+python ui.py
+```
+
+The UI fits the current scraper model:
+
+- you paste one or more URLs
+- you enter the CSS selectors for the container/title/price/rating fields
+- you preview the first URL
+- then you run the full scrape
+
+This is a better fit than pretending the tool can automatically understand arbitrary page structure.
 
 ## Output
 
