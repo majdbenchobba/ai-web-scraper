@@ -1,5 +1,7 @@
 # Product Web Scraper and Analyzer
 
+[![Python tests](https://github.com/majdbenchobba/ai-web-scraper/actions/workflows/tests.yml/badge.svg)](https://github.com/majdbenchobba/ai-web-scraper/actions/workflows/tests.yml)
+
 Simple Python scraper for product-listing pages.
 
 It works by:
@@ -69,6 +71,22 @@ The script writes:
 - `summary_report.txt`
 
 into the output folder.
+
+## Tests
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+Tests use synthetic HTML and local temporary files; they do not access an
+external website.
+
+## Responsible use
+
+Only scrape pages you are allowed to access and automate. Review the website's
+terms, robots guidance, rate limits, and applicable law. Avoid personal data,
+authenticated pages, and aggressive request rates. This project does not bypass
+access controls.
 
 ## Notes
 
