@@ -1,2 +1,2 @@
-https://example.com/products/page1
-https://example.com/products/page2
+# Add URLs you have permission to scrape, one per line.
+# For a complete offline example, run: product-scraper --demo

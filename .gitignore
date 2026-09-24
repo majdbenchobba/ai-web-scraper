@@ -3,3 +3,7 @@ __pycache__/
 .venv/
 venv/
 output/
+demo-output/
+build/
+dist/
+*.egg-info/

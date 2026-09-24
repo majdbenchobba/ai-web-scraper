@@ -8,7 +8,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scraper_core import (  # noqa: E402
+from product_scraper.core import (  # noqa: E402
     build_summary,
     extract_number,
     normalize_urls,
