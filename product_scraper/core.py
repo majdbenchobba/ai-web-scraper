@@ -1,5 +1,6 @@
 import csv
-from dataclasses import dataclass
+from contextlib import nullcontext
+import math
 import re
 from importlib.resources import files as package_files
 from pathlib import Path
@@ -10,6 +11,8 @@ import requests
 from bs4 import BeautifulSoup
 from soupsieve import compile as compile_selector
 
+from .checkpoint import Checkpoint
+from .models import PRODUCT_COLUMNS, ScrapeFailure
 from .network import DEFAULT_RETRIES, fetch_html, validate_retries
 
 
@@ -19,12 +22,6 @@ DEFAULT_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36"
 }
-
-
-@dataclass(frozen=True)
-class ScrapeFailure:
-    url: str
-    error: str
 
 
 def normalize_urls(lines: list[str]) -> list[str]:
@@ -73,7 +70,10 @@ def extract_number(value: str, decimal_separator: str = ".") -> float | None:
     elif integer and not integer.isdigit():
         raise ValueError(error)
 
-    return float(sign + (integer or "0") + ("." + fraction if separator else ""))
+    number = float(sign + (integer or "0") + ("." + fraction if separator else ""))
+    if not math.isfinite(number):
+        raise ValueError(error)
+    return number
 
 
 def text_or_none(element) -> str | None:
@@ -152,6 +152,9 @@ def scrape_urls(
     max_retries: int = DEFAULT_RETRIES,
     continue_on_error: bool = False,
     error_callback=None,
+    checkpoint_path: Path | None = None,
+    resume: bool = False,
+    session: requests.Session | None = None,
 ) -> pd.DataFrame:
     """Return successful rows; opt into continuation with an error callback."""
     validate_retries(max_retries)
@@ -161,16 +164,36 @@ def scrape_urls(
         compile_selector(selector)
     if continue_on_error and not callable(error_callback):
         raise ValueError("Continuing after a failed URL requires an error callback.")
+    if resume and checkpoint_path is None:
+        raise ValueError("Resuming requires a checkpoint path.")
+    urls = list(urls)
+    settings = {
+        "container_selector": container_selector, "title_selector": title_selector,
+        "price_selector": price_selector, "rating_selector": rating_selector,
+        "decimal_separator": decimal_separator,
+    }
     all_products = []
 
-    with requests.Session() as session:
+    checkpoint_context = (
+        Checkpoint(checkpoint_path, urls, settings, resume) if checkpoint_path is not None
+        else nullcontext(None)
+    )
+    with checkpoint_context as checkpoint, (
+        requests.Session() if session is None else nullcontext(session)
+    ) as active_session:
         for index, url in enumerate(urls, start=1):
+            saved = checkpoint.snapshot.pages.get(index - 1) if checkpoint else None
+            if saved and saved["status"] == "success":
+                all_products.extend(saved["rows"])
+                if progress_callback:
+                    progress_callback(f"Using saved result for {url} ({index}/{len(urls)}).")
+                continue
             if progress_callback:
                 progress_callback(f"Scraping {url} ({index}/{len(urls)})...")
 
             try:
                 products = scrape_product_page(
-                    session=session,
+                    session=active_session,
                     url=url,
                     container_selector=container_selector,
                     title_selector=title_selector,
@@ -181,20 +204,24 @@ def scrape_urls(
                     progress_callback=progress_callback,
                 )
             except (requests.RequestException, ValueError) as exc:
+                failure = ScrapeFailure(url=url, error=f"{type(exc).__name__}: {exc}")
+                if checkpoint:
+                    checkpoint.save(index - 1, [], failure.error)
                 if not continue_on_error:
                     raise
-                failure = ScrapeFailure(url=url, error=f"{type(exc).__name__}: {exc}")
                 error_callback(failure)
                 if progress_callback:
                     progress_callback(f"  Failed: {failure.error}")
                 continue
 
+            if checkpoint:
+                checkpoint.save(index - 1, products)
             if progress_callback:
                 progress_callback(f"  Found {len(products)} product rows.")
 
             all_products.extend(products)
 
-    return pd.DataFrame(all_products, columns=["SourceURL", "Title", "Price", "Rating"])
+    return pd.DataFrame(all_products, columns=PRODUCT_COLUMNS)
 
 
 def generate_chart(df: pd.DataFrame, column: str, ylabel: str, output_path: Path) -> None:

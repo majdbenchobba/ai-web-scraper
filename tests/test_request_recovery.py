@@ -134,6 +134,7 @@ class RequestRecoveryTest(unittest.TestCase):
             ({"decimal_separator": ";"}, ValueError),
             ({"container_selector": "["}, SelectorSyntaxError),
             ({"continue_on_error": True}, ValueError),
+            ({"resume": True}, ValueError),
         ]
         for options, expected in cases:
             with self.subTest(options=options), patch.object(requests.Session, "request") as request:

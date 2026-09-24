@@ -10,6 +10,7 @@ from soupsieve import SelectorSyntaxError
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from product_scraper import ui
 from product_scraper.core import ScrapeFailure, load_demo
+from product_scraper.checkpoint import Checkpoint
 
 
 class ImmediateWorker:
@@ -89,6 +90,50 @@ class ScraperErrorDialogTest(unittest.TestCase):
                     )
                     self.assertIn("failed_urls.csv", warning.call_args.args[1])
                     success.assert_not_called()
+
+    def test_resume_restores_saved_urls_and_selectors_before_starting_the_worker(self):
+        urls = ["fixture://saved/first", "fixture://saved/second"]
+        settings = {
+            "container_selector": ".saved-card", "title_selector": ".saved-title",
+            "price_selector": ".saved-price", "rating_selector": ".saved-rating",
+            "decimal_separator": ",",
+        }
+        with TemporaryDirectory() as directory:
+            checkpoint_path = Path(directory) / "scrape-checkpoint.sqlite3"
+            with Checkpoint(checkpoint_path, urls, settings):
+                pass
+            app = Mock()
+            app.output_var.get.return_value = directory
+            app.skip_charts_var.get.return_value = True
+            callbacks = []
+            app.root.after.side_effect = lambda delay, callback: callbacks.append(callback)
+            with patch.object(ui, "scrape_urls", return_value=load_demo()) as scrape, patch.object(
+                ui.threading, "Thread", ImmediateWorker
+            ), patch.object(ui.messagebox, "showinfo"):
+                ui.ScraperApp.run_scrape(app, resume=True)
+                for callback in callbacks:
+                    callback()
+            app.get_urls.assert_not_called()
+            app.urls_text.insert.assert_called_once_with("1.0", "\n".join(urls))
+            app.container_var.set.assert_called_once_with(".saved-card")
+            app.decimal_var.set.assert_called_once_with(",")
+            self.assertEqual(scrape.call_args.args[0], urls)
+            self.assertTrue(scrape.call_args.kwargs["resume"])
+            self.assertEqual(scrape.call_args.kwargs["checkpoint_path"], checkpoint_path)
+            for name, value in settings.items():
+                self.assertEqual(scrape.call_args.kwargs[name], value)
+
+    def test_missing_saved_run_does_not_start_a_worker_or_create_a_checkpoint(self):
+        with TemporaryDirectory() as directory:
+            app = Mock()
+            app.output_var.get.return_value = directory
+            with patch.object(ui.messagebox, "showerror") as error, patch.object(
+                ui.threading, "Thread"
+            ) as thread:
+                ui.ScraperApp.run_scrape(app, resume=True)
+            self.assertEqual(error.call_args.args[0], "Cannot resume")
+            thread.assert_not_called()
+            self.assertEqual(list(Path(directory).iterdir()), [])
 
 
 if __name__ == "__main__":

@@ -38,3 +38,28 @@ jobs:
           product-scraper --version
           product-scraper --demo --output-dir scraper-wheel-demo
           python -c "import csv; from pathlib import Path; p=Path('scraper-wheel-demo'); assert len(list(csv.DictReader((p/'scraped_data.csv').open()))) == 8; assert (p/'price_chart.png').is_file(); assert (p/'rating_chart.png').is_file()"
+      - name: Run installed offline API examples
+        working-directory: ${{ runner.temp }}
+        run: |
+          python -m product_scraper.examples.selectors
+          python -m product_scraper.examples.partial_results
+          python -m product_scraper.examples.checkpoint_resume
+
+  test-windows:
+    name: Windows tests (3.13)
+    runs-on: windows-latest
+    timeout-minutes: 15
+    env:
+      MPLBACKEND: Agg
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: python -m pip install .
+      - run: python -m unittest discover -s tests -v
+      - name: Verify installed checkpoint recovery on Windows
+        working-directory: ${{ runner.temp }}
+        run: python -m product_scraper.examples.checkpoint_resume
