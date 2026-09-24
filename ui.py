@@ -20,6 +20,7 @@ class ScraperApp:
         self.title_var = tk.StringVar(value=".product-title")
         self.price_var = tk.StringVar(value=".product-price")
         self.rating_var = tk.StringVar(value=".product-rating")
+        self.decimal_var = tk.StringVar(value=".")
         self.skip_charts_var = tk.BooleanVar(value=False)
         self.preview_table = None
         self.log_box = None
@@ -53,6 +54,10 @@ class ScraperApp:
         ttk.Checkbutton(frame, text="Skip chart images", variable=self.skip_charts_var).grid(
             row=6, column=0, sticky="w", pady=(12, 12)
         )
+        ttk.Label(frame, text="Decimal separator").grid(row=6, column=1, sticky="e")
+        ttk.Combobox(
+            frame, textvariable=self.decimal_var, values=(".", ","), state="readonly", width=5
+        ).grid(row=6, column=2, sticky="w", padx=8)
 
         button_row = ttk.Frame(frame)
         button_row.grid(row=7, column=0, columnspan=4, sticky="ew")
@@ -120,7 +125,11 @@ class ScraperApp:
             "title_selector": self.title_var.get().strip(),
             "price_selector": self.price_var.get().strip(),
             "rating_selector": self.rating_var.get().strip(),
+            "decimal_separator": self.decimal_var.get(),
         }
+
+    def report_progress(self, message: str):
+        self.root.after(0, lambda text=message: self.append_log(text))
 
     def preview(self):
         urls = self.get_urls()
@@ -129,12 +138,15 @@ class ScraperApp:
             return
 
         self.append_log("Previewing the first URL...")
+        options = self.selectors()
 
         def worker():
             try:
-                df = scrape_urls(urls[:1], progress_callback=self.append_log, **self.selectors())
-            except requests.RequestException as exc:
-                self.root.after(0, lambda: messagebox.showerror("Preview failed", str(exc)))
+                df = scrape_urls(urls[:1], progress_callback=self.report_progress, **options)
+            except (requests.RequestException, ValueError, OSError) as exc:
+                self.root.after(
+                    0, lambda message=str(exc): messagebox.showerror("Preview failed", message)
+                )
                 return
 
             preview_rows = df.head(20).to_dict("records")
@@ -149,14 +161,18 @@ class ScraperApp:
             return
 
         output_dir = Path(self.output_var.get().strip() or DEFAULT_OUTPUT_DIR)
+        options = self.selectors()
+        skip_charts = self.skip_charts_var.get()
         self.append_log(f"Running scrape for {len(urls)} URL(s)...")
 
         def worker():
             try:
-                df = scrape_urls(urls, progress_callback=self.append_log, **self.selectors())
-                files = write_outputs(df, output_dir, self.skip_charts_var.get())
-            except requests.RequestException as exc:
-                self.root.after(0, lambda: messagebox.showerror("Scrape failed", str(exc)))
+                df = scrape_urls(urls, progress_callback=self.report_progress, **options)
+                files = write_outputs(df, output_dir, skip_charts)
+            except (requests.RequestException, ValueError, OSError) as exc:
+                self.root.after(
+                    0, lambda message=str(exc): messagebox.showerror("Scrape failed", message)
+                )
                 return
 
             preview_rows = df.head(20).to_dict("records")

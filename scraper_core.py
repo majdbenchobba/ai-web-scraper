@@ -26,18 +26,42 @@ def load_urls(urls_file: Path) -> list[str]:
     return normalize_urls(urls_file.read_text(encoding="utf-8").splitlines())
 
 
-def extract_number(value: str) -> float | None:
+def extract_number(value: str, decimal_separator: str = ".") -> float | None:
+    if decimal_separator not in (".", ","):
+        raise ValueError("The decimal separator must be '.' or ','.")
     if not value:
         return None
 
-    match = re.search(r"-?\d[\d,]*\.?\d*", value.replace(" ", ""))
+    match = re.search(r"[+-]?(?:\d[\d., \u00a0\u202f]*|[.,]\d+)", value)
     if not match:
         return None
 
-    try:
-        return float(match.group(0).replace(",", ""))
-    except ValueError:
-        return None
+    token = re.sub(r"[ \u00a0\u202f]+", " ", match.group(0)).strip()
+    sign = ""
+    if token.startswith(("-", "+")):
+        sign, token = token[0], token[1:]
+    error = (
+        f"Cannot parse {value!r} with decimal separator {decimal_separator!r}. "
+        "Choose the number format used by the page."
+    )
+    if token.count(decimal_separator) > 1:
+        raise ValueError(error)
+    integer, separator, fraction = token.partition(decimal_separator)
+    if fraction and not fraction.isdigit():
+        raise ValueError(error)
+
+    thousands_separator = "," if decimal_separator == "." else "."
+    if thousands_separator in integer and " " in integer:
+        raise ValueError(error)
+    grouping = thousands_separator if thousands_separator in integer else " "
+    if grouping in integer:
+        if not re.fullmatch(rf"\d{{1,3}}(?:{re.escape(grouping)}\d{{3}})+", integer):
+            raise ValueError(error)
+        integer = integer.replace(grouping, "")
+    elif integer and not integer.isdigit():
+        raise ValueError(error)
+
+    return float(sign + (integer or "0") + ("." + fraction if separator else ""))
 
 
 def text_or_none(element) -> str | None:
@@ -54,6 +78,7 @@ def scrape_product_page(
     title_selector: str,
     price_selector: str,
     rating_selector: str,
+    decimal_separator: str = ".",
 ) -> list[dict]:
     response = session.get(url, headers=DEFAULT_HEADERS, timeout=20)
     response.raise_for_status()
@@ -69,8 +94,8 @@ def scrape_product_page(
         record = {
             "SourceURL": url,
             "Title": title or "Untitled product",
-            "Price": extract_number(price_text),
-            "Rating": extract_number(rating_text),
+            "Price": extract_number(price_text, decimal_separator),
+            "Rating": extract_number(rating_text, decimal_separator),
         }
 
         if any(value is not None for key, value in record.items() if key != "SourceURL"):
@@ -86,6 +111,7 @@ def scrape_urls(
     price_selector: str,
     rating_selector: str,
     progress_callback=None,
+    decimal_separator: str = ".",
 ) -> pd.DataFrame:
     session = requests.Session()
     all_products = []
@@ -101,6 +127,7 @@ def scrape_urls(
             title_selector=title_selector,
             price_selector=price_selector,
             rating_selector=rating_selector,
+            decimal_separator=decimal_separator,
         )
 
         if progress_callback:

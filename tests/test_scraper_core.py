@@ -30,6 +30,38 @@ class ScraperCoreTest(unittest.TestCase):
         self.assertIsNone(extract_number("not available"))
         self.assertIsNone(extract_number(""))
 
+    def test_comma_decimal_prices_and_ratings(self):
+        for value, expected in [
+            ("1 249,50 EUR", 1249.5),
+            ("1.249,50 EUR", 1249.5),
+            ("1\u202f249,50 EUR", 1249.5),
+            ("4,7 / 5", 4.7),
+            ("-19,25 EUR", -19.25),
+            (",50 EUR", 0.5),
+        ]:
+            with self.subTest(value=value):
+                self.assertEqual(extract_number(value, ","), expected)
+
+    def test_incompatible_or_malformed_formats_are_rejected(self):
+        for value, separator in [
+            ("1 249,50 EUR", "."),
+            ("1.249,50 EUR", "."),
+            ("4,7 / 5", "."),
+            ("$1,249.50", ","),
+            ("12,34.50", "."),
+            ("1.2.3", "."),
+            ("1,23,456", "."),
+        ]:
+            with self.subTest(value=value, separator=separator):
+                with self.assertRaisesRegex(ValueError, "Choose the number format"):
+                    extract_number(value, separator)
+
+    def test_grouped_numbers_follow_the_explicit_decimal_setting(self):
+        self.assertEqual(extract_number("1,249", "."), 1249)
+        self.assertEqual(extract_number("1,249", ","), 1.249)
+        self.assertEqual(extract_number("12 345.67 USD", "."), 12345.67)
+        self.assertEqual(extract_number(".50 USD", "."), 0.5)
+
     def test_scrape_product_page_uses_explicit_selectors(self):
         response = Mock()
         response.text = """
@@ -64,6 +96,22 @@ class ScraperCoreTest(unittest.TestCase):
             ],
         )
         session.get.assert_called_once()
+
+    def test_page_extraction_applies_the_selected_number_format(self):
+        response = Mock()
+        response.text = (
+            '<article class="card"><h2>Demo</h2>'
+            '<span class="price">1.249,50 EUR</span>'
+            '<span class="rating">4,7 / 5</span></article>'
+        )
+        session = Mock()
+        session.get.return_value = response
+        rows = scrape_product_page(
+            session, "https://example.test", ".card", "h2", ".price", ".rating",
+            decimal_separator=",",
+        )
+        self.assertEqual(rows[0]["Price"], 1249.5)
+        self.assertEqual(rows[0]["Rating"], 4.7)
 
     def test_summary_and_outputs_use_only_local_data(self):
         frame = pd.DataFrame(
