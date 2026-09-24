@@ -16,6 +16,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--price-selector", default=".product-price")
     parser.add_argument("--rating-selector", default=".product-rating")
     parser.add_argument(
+        "--decimal-separator",
+        choices=(".", ","),
+        default=".",
+        help="Decimal separator used in the page's prices and ratings (default: .).",
+    )
+    parser.add_argument(
         "--skip-charts",
         action="store_true",
         help="Skip generating chart images.",
@@ -43,9 +49,10 @@ def main() -> int:
             title_selector=args.title_selector,
             price_selector=args.price_selector,
             rating_selector=args.rating_selector,
+            decimal_separator=args.decimal_separator,
             progress_callback=print,
         )
-    except requests.RequestException as exc:
+    except (requests.RequestException, ValueError) as exc:
         print(f"Scrape failed: {exc}")
         return 1
 

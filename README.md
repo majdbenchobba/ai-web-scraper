@@ -59,7 +59,21 @@ The UI fits the current scraper model:
 - you preview the first URL
 - then you run the full scrape
 
-This is a better fit than pretending the tool can automatically understand arbitrary page structure.
+Select the page's decimal separator in the UI before previewing or scraping.
+
+## Number formats
+
+The default decimal separator is `.`: `$1,249.50` becomes `1249.5`.
+For pages using a decimal comma, pass `--decimal-separator ","` or choose `,`
+in the desktop UI. Both `1 249,50 EUR` and `1.249,50 EUR` then become `1249.5`,
+and a rating of `4,7 / 5` becomes `4.7`.
+
+The setting applies to prices and ratings. Thousands groups must contain three
+digits. Incompatible or malformed formats stop the scrape with an error, so
+an incorrect number format cannot silently inflate prices. A value such as
+`1,249` is interpreted according to the explicit setting: `1249` with decimal
+`.` and `1.249` with decimal `,`. Use separate runs for pages with different
+number formats.
 
 ## Output
 
