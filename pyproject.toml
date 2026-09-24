@@ -29,7 +29,7 @@ Repository = "https://github.com/majdbenchobba/ai-web-scraper"
 Issues = "https://github.com/majdbenchobba/ai-web-scraper/issues"
 
 [tool.setuptools]
-packages = ["product_scraper", "product_scraper.data"]
+packages = ["product_scraper", "product_scraper.data", "product_scraper.examples"]
 
 [tool.setuptools.package-data]
 product_scraper = ["data/*.html"]

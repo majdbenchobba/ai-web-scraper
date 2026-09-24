@@ -6,6 +6,7 @@ from tkinter import filedialog, messagebox, scrolledtext, ttk
 import requests
 from soupsieve import SelectorSyntaxError
 
+from .checkpoint import read_checkpoint
 from .core import DEFAULT_OUTPUT_DIR, scrape_urls, write_outputs
 
 
@@ -23,6 +24,7 @@ class ScraperApp:
         self.rating_var = tk.StringVar(value=".product-rating")
         self.decimal_var = tk.StringVar(value=".")
         self.skip_charts_var = tk.BooleanVar(value=False)
+        self.checkpoint_var = tk.BooleanVar(value=True)
         self.preview_table = None
         self.log_box = None
 
@@ -59,11 +61,17 @@ class ScraperApp:
         ttk.Combobox(
             frame, textvariable=self.decimal_var, values=(".", ","), state="readonly", width=5
         ).grid(row=6, column=2, sticky="w", padx=8)
+        ttk.Checkbutton(frame, text="Save progress", variable=self.checkpoint_var).grid(
+            row=6, column=3, sticky="w"
+        )
 
         button_row = ttk.Frame(frame)
         button_row.grid(row=7, column=0, columnspan=4, sticky="ew")
         ttk.Button(button_row, text="Preview first URL", command=self.preview).pack(side="left")
         ttk.Button(button_row, text="Run scrape", command=self.run_scrape).pack(side="left", padx=(8, 0))
+        ttk.Button(
+            button_row, text="Resume saved run", command=lambda: self.run_scrape(resume=True)
+        ).pack(side="left", padx=(8, 0))
 
         ttk.Label(frame, text="Preview").grid(row=8, column=0, sticky="w", pady=(12, 4))
         columns = ("SourceURL", "Title", "Price", "Rating")
@@ -155,23 +163,44 @@ class ScraperApp:
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def run_scrape(self):
-        urls = self.get_urls()
+    def run_scrape(self, resume=False):
+        output_dir = Path(self.output_var.get().strip() or DEFAULT_OUTPUT_DIR)
+        checkpoint_path = (
+            output_dir / "scrape-checkpoint.sqlite3"
+            if resume or self.checkpoint_var.get() else None
+        )
+        if resume:
+            try:
+                saved = read_checkpoint(checkpoint_path)
+            except (ValueError, OSError) as exc:
+                messagebox.showerror("Cannot resume", str(exc))
+                return
+            urls, options = saved.urls, saved.settings
+            self.urls_text.delete("1.0", "end")
+            self.urls_text.insert("1.0", "\n".join(urls))
+            for variable, setting in (
+                (self.container_var, "container_selector"), (self.title_var, "title_selector"),
+                (self.price_var, "price_selector"), (self.rating_var, "rating_selector"),
+                (self.decimal_var, "decimal_separator"),
+            ):
+                variable.set(options[setting])
+            self.checkpoint_var.set(True)
+        else:
+            urls, options = self.get_urls(), self.selectors()
         if not urls:
             messagebox.showerror("Missing URL", "Add at least one URL first.")
             return
 
-        output_dir = Path(self.output_var.get().strip() or DEFAULT_OUTPUT_DIR)
-        options = self.selectors()
         skip_charts = self.skip_charts_var.get()
-        self.append_log(f"Running scrape for {len(urls)} URL(s)...")
+        self.append_log(f"{'Resuming' if resume else 'Running'} scrape for {len(urls)} URL(s)...")
 
         def worker():
             failures = []
             try:
                 df = scrape_urls(
                     urls, progress_callback=self.report_progress, continue_on_error=True,
-                    error_callback=failures.append, **options,
+                    error_callback=failures.append, checkpoint_path=checkpoint_path,
+                    resume=resume, **options,
                 )
                 files = write_outputs(df, output_dir, skip_charts, failures)
             except (requests.RequestException, ValueError, OSError, SelectorSyntaxError) as exc:
@@ -187,6 +216,8 @@ class ScraperApp:
                 self.append_log(f"Saved CSV to {files['csv']}")
                 self.append_log(f"Saved summary to {files['summary']}")
                 self.append_log(f"Saved URL errors to {files['errors']}")
+                if checkpoint_path is not None:
+                    self.append_log(f"Saved progress to {checkpoint_path}")
                 if "price_chart" in files:
                     self.append_log(f"Saved price chart to {files['price_chart']}")
                 if "rating_chart" in files:

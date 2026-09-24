@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.0
+
+- Per-URL SQLite checkpoints that preserve completed pages across interruptions
+  and abrupt process exit. Resume skips successes and retries failed or pending
+  pages without duplicating rows.
+- Strict URL/order/selector/decimal matching and exclusive process ownership
+  protect saved runs from incompatible or concurrent writes.
+- CLI `--checkpoint` / `--resume`, partial export on `Ctrl+C`, and desktop
+  progress saving with a button that restores and resumes the saved run.
+- Caller-owned Requests sessions and three packaged, runnable offline API
+  examples for selectors, partial results, and checkpoint recovery.
+- Windows CI coverage alongside the Linux Python matrix.
+
 ## 0.2.0
 
 - Bounded retries for transient GET failures, with exponential backoff and

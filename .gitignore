@@ -7,3 +7,5 @@ demo-output/
 build/
 dist/
 *.egg-info/
+*.sqlite3*
+example-output/

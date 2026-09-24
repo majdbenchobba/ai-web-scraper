@@ -62,6 +62,10 @@ class ScraperCoreTest(unittest.TestCase):
         self.assertEqual(extract_number("12 345.67 USD", "."), 12345.67)
         self.assertEqual(extract_number(".50 USD", "."), 0.5)
 
+    def test_non_finite_prices_are_rejected(self):
+        with self.assertRaisesRegex(ValueError, "Cannot parse"):
+            extract_number("$" + "9" * 1000)
+
     def test_scrape_product_page_uses_explicit_selectors(self):
         response = Mock()
         response.text = """
