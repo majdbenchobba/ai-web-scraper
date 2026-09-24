@@ -135,6 +135,9 @@ exits. Close a run before moving its checkpoint.
 In Python, pass `checkpoint_path=Path("run.sqlite3")` and later `resume=True`
 to `scrape_urls`. `product_scraper.checkpoint.read_checkpoint` reads the saved
 URLs, extraction settings, rows, and failure information without changing the file.
+If a process stopped during a database write, `recover_checkpoint` acquires the
+writer lock and lets SQLite recover the interrupted transaction before reading.
+The CLI and desktop resume paths perform this recovery automatically.
 
 ## Runnable offline API examples
 

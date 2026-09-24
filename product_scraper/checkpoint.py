@@ -119,12 +119,26 @@ def read_checkpoint(path: Path) -> CheckpointSnapshot:
             connection.close()
 
 
+def recover_checkpoint(path: Path) -> CheckpointSnapshot:
+    """Recover an interrupted SQLite write under the writer lock, then inspect it."""
+    path = Path(path)
+    if not path.is_file():
+        raise CheckpointError(f"Checkpoint not found: {path}")
+    with Checkpoint(path, None, None, resume=True) as checkpoint:
+        return checkpoint.snapshot
+
+
 class Checkpoint:
-    def __init__(self, path: Path, urls: list[str], settings: dict[str, str], resume=False):
+    def __init__(self, path: Path, urls: list[str] | None, settings: dict[str, str] | None, resume=False):
         self.path = Path(path).resolve()
-        self.config = _validate_config({
-            "schema_version": SCHEMA_VERSION, "urls": list(urls), "settings": dict(settings),
-        })
+        if urls is None or settings is None:
+            if not (resume and urls is None and settings is None):
+                raise CheckpointError("Both URLs and extraction settings are required for a new checkpoint.")
+            self.config = None
+        else:
+            self.config = _validate_config({
+                "schema_version": SCHEMA_VERSION, "urls": list(urls), "settings": dict(settings),
+            })
         self.resume = resume
         self.connection = None
         self.lock_file = None
@@ -180,7 +194,12 @@ class Checkpoint:
                         (json.dumps(self.config, ensure_ascii=False, allow_nan=False),),
                     )
             self.snapshot = _snapshot(self.connection)
-            if self.snapshot.urls != self.config["urls"] or self.snapshot.settings != self.config["settings"]:
+            if self.config is None:
+                self.config = {
+                    "schema_version": SCHEMA_VERSION,
+                    "urls": self.snapshot.urls, "settings": self.snapshot.settings,
+                }
+            elif self.snapshot.urls != self.config["urls"] or self.snapshot.settings != self.config["settings"]:
                 raise CheckpointError(
                     "Checkpoint URLs, their order, or extraction settings differ from this run."
                 )

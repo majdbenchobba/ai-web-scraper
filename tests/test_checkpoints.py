@@ -15,7 +15,7 @@ import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from product_scraper import cli
-from product_scraper.checkpoint import Checkpoint, CheckpointError, read_checkpoint
+from product_scraper.checkpoint import Checkpoint, CheckpointError, read_checkpoint, recover_checkpoint
 from product_scraper.core import scrape_urls
 from product_scraper.examples._fixtures import SELECTORS
 
@@ -228,6 +228,38 @@ with patch("product_scraper.core.scrape_product_page", side_effect=fetch):
                     )
             self.assertEqual(fetch.call_count, 2)
             self.assertEqual(read_checkpoint(path).completed, 1)
+
+    def test_recovery_rolls_back_a_write_interrupted_after_pages_spill_to_disk(self):
+        script = """
+import json, os, sqlite3, sys
+connection = sqlite3.connect(sys.argv[1])
+connection.execute("PRAGMA cache_size=1")
+connection.execute("PRAGMA cache_spill=ON")
+connection.execute("BEGIN IMMEDIATE")
+rows = [{"SourceURL": "fixture://second", "Title": "x" * 2000000, "Price": 1.0, "Rating": None}]
+connection.execute("INSERT INTO checkpoint_pages VALUES (1, 'success', ?, NULL)", (json.dumps(rows),))
+os._exit(37)
+"""
+        urls = ["fixture://first", "fixture://second"]
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "run.sqlite3"
+            with Checkpoint(path, urls, SETTINGS) as checkpoint:
+                checkpoint.save(0, product(urls[0], "Committed before write"))
+            result = subprocess.run(
+                [sys.executable, "-c", script, str(path)],
+                capture_output=True, text=True, timeout=30,
+            )
+            self.assertEqual(result.returncode, 37, result.stderr)
+            self.assertTrue(Path(str(path) + "-journal").exists())
+            recovered = recover_checkpoint(path)
+            self.assertEqual(recovered.completed, 1)
+            self.assertEqual(recovered.rows[0]["Title"], "Committed before write")
+            with patch(
+                "product_scraper.core.scrape_product_page", return_value=product(urls[1])
+            ) as fetch:
+                frame = scrape_urls(urls, checkpoint_path=path, resume=True, **SELECTORS)
+            fetch.assert_called_once()
+            self.assertEqual(frame["SourceURL"].tolist(), urls)
 
     def test_cli_interrupt_exports_saved_rows_and_resume_finishes_the_same_run(self):
         with TemporaryDirectory() as directory:

@@ -6,7 +6,7 @@ from tkinter import filedialog, messagebox, scrolledtext, ttk
 import requests
 from soupsieve import SelectorSyntaxError
 
-from .checkpoint import read_checkpoint
+from .checkpoint import recover_checkpoint
 from .core import DEFAULT_OUTPUT_DIR, scrape_urls, write_outputs
 
 
@@ -171,7 +171,7 @@ class ScraperApp:
         )
         if resume:
             try:
-                saved = read_checkpoint(checkpoint_path)
+                saved = recover_checkpoint(checkpoint_path)
             except (ValueError, OSError) as exc:
                 messagebox.showerror("Cannot resume", str(exc))
                 return
