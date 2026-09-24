@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "majd-product-scraper"
+dynamic = ["version"]
+description = "Selector-driven product extraction, CSV reports, charts, and an offline demo."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{name = "Majd Ben Chobba"}]
+dependencies = [
+  "requests>=2.32.5,<3",
+  "beautifulsoup4>=4.13,<5",
+  "pandas>=2.2.3,<4",
+  "matplotlib>=3.9,<4",
+]
+
+[project.scripts]
+product-scraper = "product_scraper.cli:main"
+
+[project.gui-scripts]
+product-scraper-gui = "product_scraper.ui:main"
+
+[project.urls]
+Repository = "https://github.com/majdbenchobba/ai-web-scraper"
+Issues = "https://github.com/majdbenchobba/ai-web-scraper/issues"
+
+[tool.setuptools]
+packages = ["product_scraper"]
+
+[tool.setuptools.package-data]
+product_scraper = ["data/*.html"]
+
+[tool.setuptools.dynamic]
+version = {attr = "product_scraper.__version__"}

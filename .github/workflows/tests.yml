@@ -12,7 +12,7 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     strategy:
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
@@ -27,5 +27,14 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
       - run: python -m pip install --upgrade pip
-      - run: python -m pip install -r requirements.txt
+      - run: python -m pip install build twine
+      - run: python -m build
+      - run: python -m twine check dist/*
+      - run: python -m pip install dist/*.whl
       - run: python -m unittest discover -s tests -v
+      - name: Verify the installed wheel and bundled demo outside the checkout
+        working-directory: ${{ runner.temp }}
+        run: |
+          product-scraper --version
+          product-scraper --demo --output-dir scraper-wheel-demo
+          python -c "import csv; from pathlib import Path; p=Path('scraper-wheel-demo'); assert len(list(csv.DictReader((p/'scraped_data.csv').open()))) == 8; assert (p/'price_chart.png').is_file(); assert (p/'rating_chart.png').is_file()"

@@ -6,7 +6,7 @@ from unittest.mock import Mock, patch
 import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-import ui
+from product_scraper import ui
 
 
 class ImmediateWorker:

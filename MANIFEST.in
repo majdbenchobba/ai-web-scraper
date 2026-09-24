@@ -1,0 +1,7 @@
+include CHANGELOG.md
+include all_in_one_scraper.py
+include scraper_core.py
+include ui.py
+include sample_urls.txt
+include requirements.txt
+recursive-include docs *.png

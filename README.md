@@ -1,108 +1,111 @@
-# Product Web Scraper and Analyzer
+# Product Web Scraper
 
 [![Python tests](https://github.com/majdbenchobba/ai-web-scraper/actions/workflows/tests.yml/badge.svg)](https://github.com/majdbenchobba/ai-web-scraper/actions/workflows/tests.yml)
 
-Simple Python scraper for product-listing pages.
-
-It works by:
-
-1. loading one or more URLs
-2. finding repeated product containers with a CSS selector
-3. pulling title, price, and rating values from each container using more CSS selectors
-4. saving the result to CSV and optional charts
-
-That means this is not a generic "scrape any site automatically" tool. It works best on pages with a repeated product-card layout where you already know, or can inspect, the selectors you want.
+Extract products from HTML with explicit CSS selectors, then save a CSV, summary,
+and charts. Try the bundled fictional catalog without visiting a website.
 
 ## Install
 
-```bash
-pip install -r requirements.txt
-```
-
-## Basic use
-
-1. Put the URLs in `sample_urls.txt`
-2. Run the script with selectors for the site you want
-
-Example:
+Python 3.11 or newer is required. Install the v0.1.0 wheel in a virtual environment:
 
 ```bash
-python all_in_one_scraper.py ^
-  --container-selector ".product-item" ^
-  --title-selector ".product-title" ^
-  --price-selector ".product-price" ^
-  --rating-selector ".product-rating"
+python -m pip install "https://github.com/majdbenchobba/ai-web-scraper/releases/download/v0.1.0/majd_product_scraper-0.1.0-py3-none-any.whl"
 ```
 
-PowerShell version:
-
-```powershell
-python .\all_in_one_scraper.py `
-  --container-selector ".product-item" `
-  --title-selector ".product-title" `
-  --price-selector ".product-price" `
-  --rating-selector ".product-rating"
-```
-
-## UI
-
-There is also a small desktop UI:
+Or install the downloaded wheel from the [release page](https://github.com/majdbenchobba/ai-web-scraper/releases/tag/v0.1.0):
 
 ```bash
-python ui.py
+python -m pip install ./majd_product_scraper-0.1.0-py3-none-any.whl
 ```
 
-The UI fits the current scraper model:
+## Try it in one command
 
-- you paste one or more URLs
-- you enter the CSS selectors for the container/title/price/rating fields
-- you preview the first URL
-- then you run the full scrape
+```bash
+product-scraper --demo
+```
 
-Select the page's decimal separator in the UI before previewing or scraping.
+The offline demo reads eight fictional products bundled with the package and
+writes these files to `demo-output/`:
+
+- `scraped_data.csv`
+- `summary_report.txt`
+- `price_chart.png`
+- `rating_chart.png`
+
+No network requests are made in demo mode. Products, prices, and ratings are
+invented demonstration data, not real offers.
+
+![Price chart generated from the fictional offline catalog](docs/demo-price-chart.png)
+
+Choose another directory or skip charts:
+
+```bash
+product-scraper --demo --output-dir my-demo --skip-charts
+```
+
+The demo uses its fixed catalog selectors and dot-decimal format. Custom selector
+and number-format options apply to URL scraping.
+
+## Scrape an HTML product page
+
+Put URLs you are authorized to scrape in `my_urls.txt`, one per line, then use
+selectors matching that site's product cards:
+
+```bash
+product-scraper --urls-file my_urls.txt --container-selector ".product-item" --title-selector ".product-title" --price-selector ".product-price" --rating-selector ".product-rating"
+```
+
+The default output directory for URL scraping is `output/`. A URL file is required;
+the program does not silently request placeholder websites.
+
+This is a selector-driven HTML tool. It does not run browser JavaScript, discover
+selectors automatically, or bypass access controls. A failed request or invalid
+number format stops the run with an error.
 
 ## Number formats
 
 The default decimal separator is `.`: `$1,249.50` becomes `1249.5`.
-For pages using a decimal comma, pass `--decimal-separator ","` or choose `,`
-in the desktop UI. Both `1 249,50 EUR` and `1.249,50 EUR` then become `1249.5`,
-and a rating of `4,7 / 5` becomes `4.7`.
+For pages using a decimal comma, pass `--decimal-separator ","`. Both
+`1 249,50 EUR` and `1.249,50 EUR` then become `1249.5`; a rating of `4,7 / 5`
+becomes `4.7`.
 
 The setting applies to prices and ratings. Thousands groups must contain three
-digits. Incompatible or malformed formats stop the scrape with an error, so
-an incorrect number format cannot silently inflate prices. A value such as
-`1,249` is interpreted according to the explicit setting: `1249` with decimal
-`.` and `1.249` with decimal `,`. Use separate runs for pages with different
-number formats.
+digits. A value such as `1,249` follows the explicit setting: `1249` with decimal
+`.` and `1.249` with decimal `,`. Use separate runs for different number formats.
 
-## Output
-
-The script writes:
-
-- `scraped_data.csv`
-- `price_chart.png`
-- `rating_chart.png`
-- `summary_report.txt`
-
-into the output folder.
-
-## Tests
+## Desktop interface
 
 ```bash
-python -m unittest discover -s tests -v
+product-scraper-gui
 ```
 
-Tests use synthetic HTML and local temporary files; they do not access an
-external website.
+The desktop interface needs Tkinter, included with standard Python installers on
+Windows and macOS. Some Linux distributions package it separately. It supports
+URL entry, selector and decimal-format settings, preview, and export.
+
+## Source checkout and tests
+
+```bash
+python -m pip install -e .
+python -m unittest discover -s tests -v
+python -m product_scraper --demo
+```
+
+Legacy launch commands remain available from the repository:
+
+```bash
+python all_in_one_scraper.py --demo
+python ui.py
+```
+
+CI runs the tests on Python 3.11, 3.12, and 3.13, builds and checks the wheel/source
+archive, and runs the installed wheel's offline demo outside the checkout.
+Tests use local fixtures and mocked requests.
 
 ## Responsible use
 
-Only scrape pages you are allowed to access and automate. Review the website's
-terms, robots guidance, rate limits, and applicable law. Avoid personal data,
-authenticated pages, and aggressive request rates. This project does not bypass
-access controls.
+Use URL scraping only where you have permission. Follow the site's terms and
+request limits, and avoid personal data or authenticated pages.
 
-## Notes
-
-- The default selectors are only placeholders.
-- Some sites block scraping or rate-limit requests, so use it carefully.
+Released under the MIT license. See [CHANGELOG.md](CHANGELOG.md) for v0.1.0.
