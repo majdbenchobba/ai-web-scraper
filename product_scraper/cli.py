@@ -6,6 +6,7 @@ from soupsieve import SelectorSyntaxError
 
 from . import __version__
 from .core import DEFAULT_OUTPUT_DIR, load_demo, load_urls, scrape_urls, write_outputs
+from .network import DEFAULT_RETRIES, MAX_RETRIES
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -22,6 +23,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--price-selector", default=".product-price")
     parser.add_argument("--rating-selector", default=".product-rating")
     parser.add_argument(
+        "--retries", type=int, choices=range(MAX_RETRIES + 1), default=DEFAULT_RETRIES,
+        help=f"Additional attempts for transient GET failures (default: {DEFAULT_RETRIES}, maximum: {MAX_RETRIES}).",
+    )
+    parser.add_argument(
         "--decimal-separator",
         choices=(".", ","),
         default=".",
@@ -37,6 +42,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
+    failures = []
+    urls = []
 
     try:
         if args.demo:
@@ -56,9 +63,12 @@ def main() -> int:
                 rating_selector=args.rating_selector,
                 decimal_separator=args.decimal_separator,
                 progress_callback=print,
+                max_retries=args.retries,
+                continue_on_error=True,
+                error_callback=failures.append,
             )
             output_dir = args.output_dir or DEFAULT_OUTPUT_DIR
-        files = write_outputs(df, output_dir, args.skip_charts)
+        files = write_outputs(df, output_dir, args.skip_charts, failures)
     except (requests.RequestException, ValueError, OSError, SelectorSyntaxError) as exc:
         print(f"Scrape failed: {exc}")
         return 1
@@ -66,10 +76,14 @@ def main() -> int:
     print(f"Products extracted: {len(df)}")
     print(f"Scraped data saved to: {files['csv']}")
     print(f"Summary saved to: {files['summary']}")
+    print(f"URL errors saved to: {files['errors']}")
     for key in ("price_chart", "rating_chart"):
         if key in files:
             print(f"Chart saved to: {files[key]}")
 
+    if failures:
+        print(f"URLs failed: {len(failures)}/{len(urls)}. Product rows saved: {len(df)}.")
+        return 1 if len(failures) == len(urls) else 3
     return 0
 
 

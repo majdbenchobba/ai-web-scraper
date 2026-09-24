@@ -4,6 +4,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
 import requests
+from soupsieve import SelectorSyntaxError
 
 from .core import DEFAULT_OUTPUT_DIR, scrape_urls, write_outputs
 
@@ -143,7 +144,7 @@ class ScraperApp:
         def worker():
             try:
                 df = scrape_urls(urls[:1], progress_callback=self.report_progress, **options)
-            except (requests.RequestException, ValueError, OSError) as exc:
+            except (requests.RequestException, ValueError, OSError, SelectorSyntaxError) as exc:
                 self.root.after(
                     0, lambda message=str(exc): messagebox.showerror("Preview failed", message)
                 )
@@ -166,10 +167,14 @@ class ScraperApp:
         self.append_log(f"Running scrape for {len(urls)} URL(s)...")
 
         def worker():
+            failures = []
             try:
-                df = scrape_urls(urls, progress_callback=self.report_progress, **options)
-                files = write_outputs(df, output_dir, skip_charts)
-            except (requests.RequestException, ValueError, OSError) as exc:
+                df = scrape_urls(
+                    urls, progress_callback=self.report_progress, continue_on_error=True,
+                    error_callback=failures.append, **options,
+                )
+                files = write_outputs(df, output_dir, skip_charts, failures)
+            except (requests.RequestException, ValueError, OSError, SelectorSyntaxError) as exc:
                 self.root.after(
                     0, lambda message=str(exc): messagebox.showerror("Scrape failed", message)
                 )
@@ -181,11 +186,20 @@ class ScraperApp:
                 self.show_preview(preview_rows)
                 self.append_log(f"Saved CSV to {files['csv']}")
                 self.append_log(f"Saved summary to {files['summary']}")
+                self.append_log(f"Saved URL errors to {files['errors']}")
                 if "price_chart" in files:
                     self.append_log(f"Saved price chart to {files['price_chart']}")
                 if "rating_chart" in files:
                     self.append_log(f"Saved rating chart to {files['rating_chart']}")
-                messagebox.showinfo("Done", f"Finished scraping {len(df)} row(s).")
+                if failures:
+                    title = "All URLs failed" if len(failures) == len(urls) else "Completed with errors"
+                    messagebox.showwarning(
+                        title,
+                        f"Saved {len(df)} row(s). {len(failures)}/{len(urls)} URLs failed.\n"
+                        f"See {files['errors']} for details.",
+                    )
+                else:
+                    messagebox.showinfo("Done", f"Finished scraping {len(df)} row(s).")
 
             self.root.after(0, finish)
 

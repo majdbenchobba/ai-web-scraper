@@ -7,16 +7,16 @@ and charts. Try the bundled fictional catalog without visiting a website.
 
 ## Install
 
-Python 3.11 or newer is required. Install the v0.1.0 wheel in a virtual environment:
+Python 3.11 or newer is required. Install the v0.2.0 wheel in a virtual environment:
 
 ```bash
-python -m pip install "https://github.com/majdbenchobba/ai-web-scraper/releases/download/v0.1.0/majd_product_scraper-0.1.0-py3-none-any.whl"
+python -m pip install "https://github.com/majdbenchobba/ai-web-scraper/releases/download/v0.2.0/majd_product_scraper-0.2.0-py3-none-any.whl"
 ```
 
-Or install the downloaded wheel from the [release page](https://github.com/majdbenchobba/ai-web-scraper/releases/tag/v0.1.0):
+Or install the downloaded wheel from the [release page](https://github.com/majdbenchobba/ai-web-scraper/releases/tag/v0.2.0):
 
 ```bash
-python -m pip install ./majd_product_scraper-0.1.0-py3-none-any.whl
+python -m pip install ./majd_product_scraper-0.2.0-py3-none-any.whl
 ```
 
 ## Try it in one command
@@ -32,6 +32,7 @@ writes these files to `demo-output/`:
 - `summary_report.txt`
 - `price_chart.png`
 - `rating_chart.png`
+- `failed_urls.csv` (a header-only report when there are no failed URLs)
 
 No network requests are made in demo mode. Products, prices, and ratings are
 invented demonstration data, not real offers.
@@ -60,8 +61,43 @@ The default output directory for URL scraping is `output/`. A URL file is requir
 the program does not silently request placeholder websites.
 
 This is a selector-driven HTML tool. It does not run browser JavaScript, discover
-selectors automatically, or bypass access controls. A failed request or invalid
-number format stops the run with an error.
+selectors automatically, or bypass access controls.
+
+## Retries and partial results
+
+URL runs retry connection failures, timeouts, and HTTP 408, 429, 500, 502, 503,
+and 504 up to twice after the initial attempt. Other HTTP errors and certificate
+errors are reported without retries. Adjust the number of additional attempts
+from zero to five:
+
+```bash
+product-scraper --urls-file my_urls.txt --retries 0
+```
+
+Retries use exponential backoff. A server's `Retry-After` header is honored up to
+a 30-second wait. If the server requests a longer wait, the URL is reported as
+failed for a later run rather than retried early.
+
+The CLI and desktop **Run scrape** action keep successful pages even if another
+URL fails. `failed_urls.csv` records each failed URL and its request or parsing
+error; the summary includes the failure count. Invalid selectors and global
+configuration errors stop the run before requests are made.
+
+| CLI exit code | Meaning |
+| --- | --- |
+| `0` | All URLs completed without errors, or the offline demo succeeded |
+| `1` | Every URL failed, or setup/output failed |
+| `2` | Invalid command-line arguments |
+| `3` | Some URLs failed; successful product rows and the error report were saved |
+
+Each run replaces its error report, including when there are no failures.
+Charts from a previous run are removed when charts are skipped or the current
+data has no values for that chart.
+
+Python callers still receive a DataFrame from `scrape_urls`. Its default preserves
+fail-fast behavior after retries. Batch continuation requires
+`continue_on_error=True` and an `error_callback`, such as `failures.append`, so
+partial results cannot silently discard errors.
 
 ## Number formats
 
@@ -108,4 +144,4 @@ Tests use local fixtures and mocked requests.
 Use URL scraping only where you have permission. Follow the site's terms and
 request limits, and avoid personal data or authenticated pages.
 
-Released under the MIT license. See [CHANGELOG.md](CHANGELOG.md) for v0.1.0.
+Released under the MIT license. See [CHANGELOG.md](CHANGELOG.md) for v0.2.0.

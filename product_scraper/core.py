@@ -1,3 +1,5 @@
+import csv
+from dataclasses import dataclass
 import re
 from importlib.resources import files as package_files
 from pathlib import Path
@@ -6,6 +8,9 @@ from matplotlib.figure import Figure
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
+from soupsieve import compile as compile_selector
+
+from .network import DEFAULT_RETRIES, fetch_html, validate_retries
 
 
 DEFAULT_URLS_FILE = Path("sample_urls.txt")
@@ -14,6 +19,12 @@ DEFAULT_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36"
 }
+
+
+@dataclass(frozen=True)
+class ScrapeFailure:
+    url: str
+    error: str
 
 
 def normalize_urls(lines: list[str]) -> list[str]:
@@ -80,12 +91,13 @@ def scrape_product_page(
     price_selector: str,
     rating_selector: str,
     decimal_separator: str = ".",
+    max_retries: int = DEFAULT_RETRIES,
+    progress_callback=None,
 ) -> list[dict]:
-    response = session.get(url, headers=DEFAULT_HEADERS, timeout=20)
-    response.raise_for_status()
+    html = fetch_html(session, url, DEFAULT_HEADERS, max_retries, progress_callback)
 
     return parse_product_html(
-        response.text, url, container_selector, title_selector, price_selector,
+        html, url, container_selector, title_selector, price_selector,
         rating_selector, decimal_separator,
     )
 
@@ -137,28 +149,50 @@ def scrape_urls(
     rating_selector: str,
     progress_callback=None,
     decimal_separator: str = ".",
+    max_retries: int = DEFAULT_RETRIES,
+    continue_on_error: bool = False,
+    error_callback=None,
 ) -> pd.DataFrame:
-    session = requests.Session()
+    """Return successful rows; opt into continuation with an error callback."""
+    validate_retries(max_retries)
+    if decimal_separator not in (".", ","):
+        raise ValueError("The decimal separator must be '.' or ','.")
+    for selector in (container_selector, title_selector, price_selector, rating_selector):
+        compile_selector(selector)
+    if continue_on_error and not callable(error_callback):
+        raise ValueError("Continuing after a failed URL requires an error callback.")
     all_products = []
 
-    for index, url in enumerate(urls, start=1):
-        if progress_callback:
-            progress_callback(f"Scraping {url} ({index}/{len(urls)})...")
+    with requests.Session() as session:
+        for index, url in enumerate(urls, start=1):
+            if progress_callback:
+                progress_callback(f"Scraping {url} ({index}/{len(urls)})...")
 
-        products = scrape_product_page(
-            session=session,
-            url=url,
-            container_selector=container_selector,
-            title_selector=title_selector,
-            price_selector=price_selector,
-            rating_selector=rating_selector,
-            decimal_separator=decimal_separator,
-        )
+            try:
+                products = scrape_product_page(
+                    session=session,
+                    url=url,
+                    container_selector=container_selector,
+                    title_selector=title_selector,
+                    price_selector=price_selector,
+                    rating_selector=rating_selector,
+                    decimal_separator=decimal_separator,
+                    max_retries=max_retries,
+                    progress_callback=progress_callback,
+                )
+            except (requests.RequestException, ValueError) as exc:
+                if not continue_on_error:
+                    raise
+                failure = ScrapeFailure(url=url, error=f"{type(exc).__name__}: {exc}")
+                error_callback(failure)
+                if progress_callback:
+                    progress_callback(f"  Failed: {failure.error}")
+                continue
 
-        if progress_callback:
-            progress_callback(f"  Found {len(products)} product rows.")
+            if progress_callback:
+                progress_callback(f"  Found {len(products)} product rows.")
 
-        all_products.extend(products)
+            all_products.extend(products)
 
     return pd.DataFrame(all_products, columns=["SourceURL", "Title", "Price", "Rating"])
 
@@ -209,7 +243,12 @@ def build_summary(df: pd.DataFrame) -> str:
     return "\n".join(lines).strip() + "\n"
 
 
-def write_outputs(df: pd.DataFrame, output_dir: Path, skip_charts: bool) -> dict[str, Path]:
+def write_outputs(
+    df: pd.DataFrame,
+    output_dir: Path,
+    skip_charts: bool,
+    failures: list[ScrapeFailure] | None = None,
+) -> dict[str, Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     files = {}
@@ -217,17 +256,26 @@ def write_outputs(df: pd.DataFrame, output_dir: Path, skip_charts: bool) -> dict
     df.to_csv(csv_path, index=False)
     files["csv"] = csv_path
 
-    if not skip_charts and not df.empty:
-        price_chart = output_dir / "price_chart.png"
-        rating_chart = output_dir / "rating_chart.png"
-        generate_chart(df, "Price", "Price", price_chart)
-        generate_chart(df, "Rating", "Rating", rating_chart)
-        if price_chart.exists():
-            files["price_chart"] = price_chart
-        if rating_chart.exists():
-            files["rating_chart"] = rating_chart
+    for column, key in (("Price", "price_chart"), ("Rating", "rating_chart")):
+        chart_path = output_dir / f"{key}.png"
+        if skip_charts or df[column].dropna().empty:
+            # Never leave a previous run's chart beside the current CSV.
+            chart_path.unlink(missing_ok=True)
+        else:
+            generate_chart(df, column, column, chart_path)
+            files[key] = chart_path
 
-    summary = build_summary(df)
+    failures = failures or []
+    errors_path = output_dir / "failed_urls.csv"
+    with errors_path.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(["SourceURL", "Error"])
+        writer.writerows((failure.url, failure.error) for failure in failures)
+    files["errors"] = errors_path
+
+    summary = build_summary(df) + f"\nURLs failed: {len(failures)}\n"
+    if failures:
+        summary += "See failed_urls.csv for individual errors.\n"
     summary_path = output_dir / "summary_report.txt"
     summary_path.write_text(summary, encoding="utf-8")
     files["summary"] = summary_path
